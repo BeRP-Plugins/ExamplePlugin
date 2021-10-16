@@ -12,15 +12,31 @@ import { Skin } from "./packetTypes.i"
 export interface PluginApi {
   new (berp: any, config: examplePluginConfig, path: string, connection: ConnectionHandler)
   path: string
+  onEnabled(): Promise<void>
+  onDisabled(): Promise<void>
   getLogger(): Logger
   getConnection(): ConnectionHandler
   getConfig(): examplePluginConfig
   getApiId(): number
+  getPluginId(): number
   getCommandManager(): CommandManager
   getEventManager(): EventManager
   getPlayerManager(): PlayerManager
   getWorldManager(): WorldManager
   getSocketManager(): SocketManager
+  getPlugins(): Map<string, ActivePlugin>
+  createInterface(options: InterfaceOptions): void
+}
+
+interface InterfaceOptions {
+  name: string
+  interface: string
+}
+
+export interface examplePlugin {
+  new (pluginApi: any)
+  onEnabled(): Promise<void>
+  onDisabled(): Promise<void>
 }
 
 interface examplePluginConfig {
@@ -175,7 +191,8 @@ type LoggerColors = (
 )
 
 export interface CommandManager {
-  executeCommand(command: string, callback?: (err: any, res: packet_command_output) => void): Promise<void>
+  executeCommand(command: string, callback?: (res: packet_command_output) => void): void
+  registerConsoleCommand(options: ConsoleCommandOptions, callback: (args: string[]) => void): void
   registerCommand(options: CommandOptions, callback: (data: CommandResponse) => void): void
   getPrefix(): string
   setPrefix(prefix: string): void
@@ -202,7 +219,7 @@ export interface EventManager {
 interface EventValues {
   PlayerJoin: [Player]
   PlayerLeft: [Player]
-  PlayerInitialized: [string]
+  PlayerInitialized: [Player]
   PlayerMessage: [PlayerMessage] 
   PlayerDied: [PlayerDied]
   ChatCommand: [ChatCommand]
@@ -210,20 +227,25 @@ interface EventValues {
 
 export interface Player {
   getName(): string
-  getNickname(): string
+  getNameTag(): string
   getRealmID(): number
   getUUID(): string 
   getXuid(): string
   getEntityID(): bigint 
-  getDevice(): number
+  getDevice(): string
   getSkinData(): Skin
   getExecutionName(): string
-  setNickname(nickname: string): void
+  getConnection(): ConnectionHandler
+  setNameTag(nameTag: string): void
   sendMessage(message: string): void
-  executeCommand(command: string): void
+  sendTitle(message: string, slot: 'actionbar' | 'title' | 'subtitle'): void
+  executeCommand(command: string, callback?: (data: packet_command_output) => void): void
   getTags(): Promise<string[]>
   hasTag(tag: string): Promise<boolean>
+  addTag(tag: string): void
+  removeTag(tag: string): void
   getScore(objective: string): Promise<number>
+  updateScore(operation: 'add' | 'remove' | 'set', objective: string, value: number): void
   kick(reason: string): void
   getItemCount(item: string): Promise<number>
 }
@@ -250,9 +272,14 @@ interface JsonRequest {
 
 interface JsonData {
   event?: string
-  sender?: string
+  sender?: any
+  player?: any
+  command?: string
+  entityId?: string
+  entities?: any
   message?: string
   data?: any
+  requestId: string
 }
 
 export interface PlayerManager {
@@ -260,9 +287,10 @@ export interface PlayerManager {
   removePlayer(player: Player): void
   getPlayerByName(name: string): Player
   getPlayerByUUID(uuid: string): Player
+  getPlayerByXuid(xuid: string): Player
   getPlayerByEntityID(entityID: bigint): Player
-  getPlayerByRuntimeID(runtimeID: bigint): Player
   getPlayerList(): Map<string, Player>
+  updatePlayerNameTag(player: Player, nameTag: string): void
 }
 
 export interface WorldManager {
@@ -285,7 +313,8 @@ export interface SocketManager {
     event: Exclude<S, keyof SocketValues>,
     ...args: unknown[]
   ): boolean
-  sendMessage(options: JsonRequest): void
+  sendMessage(options: JsonRequest, callback?: (data: JsonRequest) => void): void
+  getHeartbeats(): number
 }
 
 interface SocketValues {
@@ -299,7 +328,26 @@ interface CommandOptions {
   permissionTags?: string[]
 }
 
+export interface ConsoleCommandOptions {
+  command: string
+  aliases: string[]
+  description: string
+  usage: string
+}
+
 interface CommandResponse {
   sender: Player
   args: string[]
+}
+
+interface ActivePlugin {
+  config: examplePluginConfig
+  plugin: examplePlugin
+  api: PluginApi
+  connection: ConnectionHandler
+  path: string
+  ids: {
+    api: number
+    plugin: number
+  }
 }

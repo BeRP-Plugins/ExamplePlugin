@@ -7,11 +7,14 @@ class examplePlugin {
       this.api = api
     }
 
+    public onLoaded(): void {
+      this.api.getLogger().info('Plugin loaded!')
+    }
     public onEnabled(): void {
-      this.api.getLogger().info('Enabled!')
+      this.api.getLogger().info('Plugin enabled!')
     }
     public onDisabled(): void {
-      this.api.getLogger().info('Disabled!')
+      this.api.getLogger().info('Plugin disabled!')
     }
 }
 
