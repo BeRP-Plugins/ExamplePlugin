@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import {
   AccountInfo,
 } from "@azure/msal-node"
@@ -19,13 +20,17 @@ export interface PluginApi {
   getConfig(): examplePluginConfig
   getApiId(): number
   getPluginId(): number
+  getInstanceId(): number
   getCommandManager(): CommandManager
   getEventManager(): EventManager
   getPlayerManager(): PlayerManager
+  getEntityManager(): EntityManager
   getWorldManager(): WorldManager
   getSocketManager(): SocketManager
   getPlugins(): Map<string, ActivePlugin>
   createInterface(options: InterfaceOptions): void
+  autoConnect(accountEmail: string, realmId: number): Promise<void>
+  autoReconnect(accountEmail: string, realmId: number): Promise<void>
 }
 
 interface InterfaceOptions {
@@ -75,6 +80,7 @@ export interface ConnectionHandler extends RakManager {
   getConnectionManager(): ConnectionManager
   close(): void
   sendCommandFeedback(option: boolean): void
+  getPlugins(): Map<string, ActivePlugin>
 }
 
 export interface RakManager {
@@ -223,6 +229,8 @@ interface EventValues {
   PlayerMessage: [PlayerMessage] 
   PlayerDied: [PlayerDied]
   ChatCommand: [ChatCommand]
+  EntityCreate: [Entity]
+  EntityDestroyed: [Entity]
 }
 
 export interface Player {
@@ -248,6 +256,8 @@ export interface Player {
   updateScore(operation: 'add' | 'remove' | 'set', objective: string, value: number): void
   kick(reason: string): void
   getItemCount(item: string): Promise<number>
+  getLocation(): Promise<BlockPos>
+  getInventory(): Promise<Inventory[]>
 }
 
 interface PlayerMessage {
@@ -270,13 +280,13 @@ interface JsonRequest {
   berp: JsonData
 }
 
-interface JsonData {
+export interface JsonData {
   event?: string
   sender?: any
   player?: any
-  command?: string
-  entityId?: string
   entities?: any
+  entity?: any
+  command?: any
   message?: string
   data?: any
   requestId: string
@@ -293,8 +303,25 @@ export interface PlayerManager {
   updatePlayerNameTag(player: Player, nameTag: string): void
 }
 
+export interface EntityManager {
+  addEntity(entity: Entity): void
+  removeEntity(entity: Entity): void
+  getEntityByRuntimeID(runtimID: number): Entity
+  getEntities(): Map<number, Entity>
+}
+
+export interface Entity {
+  getID(): string
+  getNameTag(): string
+  getRuntimeID(): number
+  executeCommand(command: string): void
+  setNameTag(nameTag: string): void
+  getLocation(): Promise<BlockPos>
+}
+
 export interface WorldManager {
   sendMessage(message: string): void
+  kickAll(reason: string): void
 }
 
 export interface SocketManager {
@@ -313,12 +340,148 @@ export interface SocketManager {
     event: Exclude<S, keyof SocketValues>,
     ...args: unknown[]
   ): boolean
-  sendMessage(options: JsonRequest, callback?: (data: JsonRequest) => void): void
+  sendMessage(options: JsonRequest, callback?: (data: JsonData) => void): void
+  // @ts-ignore
+  sendPacket<K extends keyof SocketOutboundValues>(name: K, params: SocketOutboundValues[K][0], callback?: (data: SocketValues[K][0]) => void): void
   getHeartbeats(): number
+  newUUID(): string
 }
 
-interface SocketValues {
+export interface SocketValues {
   Message: [JsonData]
+  SocketEnabled: [defaultRequest]
+  SocketDisabled: [defaultRequest]
+  Heartbeat: [Heartbeat]
+  EntityDestroyed: [SocketEntity]
+  EntityCreate: [SocketEntity]
+  PlayerMessage: [PlayerMessageSocket]
+  ChatCommand: [ChatCommandSocket]
+  InventoryRequest: [InventoryRequest]
+  CommandRequest: [CommandRequest]
+  PlayerRequest: [PlayerRequest]
+  EntityRequest: [SocketEntity]
+  UpdateEntity: [UpdateEntity]
+  NameTagChanged: [NameTagChanged]
+  TagsRequest: [TagsRequest]
+  GetRequests: [GetRequests]
+  GetPlayers: [GetPlayers]
+  GetEntities: [GetEntities]
+  ScoreRequest: [ScoreRequest]
+}
+
+interface defaultRequest {
+  event: string
+  message?: string
+  requestId: string
+}
+
+export interface Heartbeat extends defaultRequest {
+  tick: number
+}
+
+export interface SocketEntity extends defaultRequest {
+  entity: {
+    id: string
+    runtimeId: number
+    nameTag: string
+    location: BlockPos
+  }
+}
+
+export interface PlayerMessageSocket extends defaultRequest {
+  sender: string
+  player: {
+    name: string
+    nameTag: string
+  }
+  message: string
+}
+
+export interface ChatCommandSocket extends defaultRequest {
+  sender: string
+  player: {
+    name: string
+    nameTag: string
+  }
+  command: string
+}
+
+export interface InventoryRequest extends defaultRequest {
+  data: {
+    slot: number
+    id: string
+    amount: number
+    data: number
+  }[]
+}
+
+export interface Inventory {
+  slot: number
+  id: string
+  amount: number
+  data: number
+}
+
+export interface CommandRequest extends defaultRequest {
+  data: {
+    statusMessage?: string
+  }
+}
+
+export interface PlayerRequest extends defaultRequest {
+  player: {
+    name: string
+    nameTag: string
+    location: BlockPos
+    isSneaking: boolean
+    id: string
+  }
+}
+
+export interface UpdateEntity extends defaultRequest {
+  data: {
+    statusMessage: string
+    err: boolean
+  }
+}
+
+export interface NameTagChanged extends defaultRequest {
+  player: string
+  data: {
+    old: string
+    new: string
+  }
+}
+
+export interface TagsRequest extends defaultRequest {
+  player: string
+  data: string[]
+}
+
+export interface GetRequests extends defaultRequest {
+ data: {
+   request: string
+   params: string
+ }[]
+}
+
+export interface GetPlayers extends defaultRequest {
+  data: {
+    name: string
+    nameTag: string
+  }[]
+}
+
+export interface GetEntities extends defaultRequest {
+  data: {
+    id: string
+    runtimeId: number
+    nameTag: string
+  }[]
+}
+
+export interface ScoreRequest extends defaultRequest {
+  data: number
 }
 
 interface CommandOptions {
@@ -349,5 +512,72 @@ interface ActivePlugin {
   ids: {
     api: number
     plugin: number
+    instance: number
+  }
+}
+
+interface BlockPos {
+  x: number
+  y: number
+  z: number
+}
+
+export interface SocketOutboundValues {
+  CommandRequest: [CommandRequestOutbound]
+  DisableRequest: []
+  EnableRequest: []
+  EntityRequest: [EntityRequestOutbound]
+  ToggleMessages: [ToggleRequests]
+  ToggleCommands: [ToggleRequests]
+  GetRequests: []
+  InventoryRequest: [InventoryRequestOutbound]
+  PlayerRequest: [PlayerRequestOutbound]
+  TagsRequest: [PlayerRequestOutbound]
+  UpdateEntity: [UpdateEntityOutbound]
+  UpdateNameTag: [UpdateNameTagOutbound]
+  GetPlayers: []
+  GetEntities: []
+  ScoreRequest: [ScoreRequestOutbound]
+}
+
+interface CommandRequestOutbound {
+  command: string
+}
+
+interface EntityRequestOutbound {
+  entity: number
+}
+
+interface ToggleRequests {
+  data: boolean
+}
+
+interface InventoryRequestOutbound {
+  player: string
+}
+
+interface PlayerRequestOutbound {
+  player: string
+}
+
+interface UpdateEntityOutbound {
+  entity: number
+  data: {
+    nameTag?: string
+    kill?: boolean
+    command?: string
+    triggerEvent?: string
+  }
+}
+
+interface UpdateNameTagOutbound {
+  player: string
+  message: string
+}
+
+interface ScoreRequestOutbound {
+  player: string
+  data: {
+    objective: string
   }
 }
